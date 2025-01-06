@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gmail Spam Classifier</title>
+    <style>
+        /* Basic Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Body Styling */
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f9f9f9;
+            padding: 0;
+            margin: 0;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* App Container */
+        #app {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 26px;
+            color: #4CAF50;
+            margin-bottom: 20px;
+        }
+
+        /* Button Styles */
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 25px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.3s ease;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        button:disabled {
+            background-color: #ddd;
+            cursor: not-allowed;
+        }
+
+        /* Email Display Area */
+        #emailDisplayArea {
+            margin-top: 20px;
+            text-align: left;
+            background-color: #ffffff;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            word-wrap: break-word;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Individual Email Styling */
+        #emailDisplayArea div {
+            margin-bottom: 15px;
+        }
+
+        #emailDisplayArea strong {
+            color: #333;
+        }
+
+        /* Media Query for Responsiveness */
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 22px;
+            }
+
+            button {
+                width: 100%;
+            }
+
+            #app {
+                padding: 15px;
+            }
+
+            #emailDisplayArea {
+                margin-top: 15px;
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <h1>Gmail Spam Classifier</h1>
+        <button id="fetch_button" onclick="handleFetchEmails()">Fetch Emails</button>
+        <div id="emailDisplayArea">Your emails will appear here.</div>
+    </div>
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script>
+        let gapiLoaded = false;
+        let auth2;
+
+        function handleClientLoad() {
+            gapi.load('client:auth2', initAuth);
+        }
+
+        function initAuth() {
+            gapi.auth2.init({
+                client_id: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+                scope: 'https://www.googleapis.com/auth/gmail.readonly'
+            }).then(() => {
+                auth2 = gapi.auth2.getAuthInstance();
+            });
+        }
+
+        function handleAuthClick() {
+            auth2.signIn().then(() => {
+                fetchEmails();
+            }).catch(error => {
+                alert('Authentication failed. Please try again.');
+                console.error('Authentication error:', error);
+            });
+        }
+
+        function handleFetchEmails() {
+            if (auth2.isSignedIn.get()) {
+                fetchEmails();
+            } else {
+                handleAuthClick();
+            }
+        }
+
+        function fetchEmails() {
+            gapi.client.request({
+                path: 'https://gmail.googleapis.com/gmail/v1/users/me/messages',
+                params: {
+                    labelIds: 'INBOX',
+                    maxResults: 10
+                }
+            }).then(response => {
+                const messages = response.result.messages;
+                if (messages && messages.length > 0) {
+                    getMessageDetails(messages);
+                } else {
+                    document.getElementById('emailDisplayArea').innerText = 'No emails found.';
+                }
+            }).catch(error => {
+                console.error('Error fetching emails:', error);
+                document.getElementById('emailDisplayArea').innerText = 'Error fetching emails. Please try again.';
+            });
+        }
+
+        function getMessageDetails(messages) {
+            let emailContent = '';
+            let promises = [];
+
+            messages.forEach(message => {
+                const request = gapi.client.request({
+                    path: `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`
+                }).then(response => {
+                    const email = response.result;
+                    const subject = email.payload.headers.find(header => header.name === 'Subject')?.value || 'No Subject';
+                    const snippet = email.snippet;
+                    const isSpam = detectSpam(subject + " " + snippet);
+
+                    emailContent += `
+                        <div>
+                            <strong>Subject:</strong> ${subject}<br>
+                            <strong>Snippet:</strong> ${snippet}<br>
+                            <strong>Spam Status:</strong> ${isSpam ? 'SPAM' : 'NOT SPAM'}<br><br>
+                        </div>
+                    `;
+                });
+
+                promises.push(request);
+            });
+
+            Promise.all(promises).then(() => {
+                document.getElementById('emailDisplayArea').innerHTML = emailContent || 'No emails found.';
+            });
+        }
+
+        function detectSpam(content) {
+            const spamKeywords = /win|free|prize|cash|money|urgent|guaranteed|click here|congratulations/i;
+            return spamKeywords.test(content);
+        }
+
+        handleClientLoad();
+    </script>
+</body>
+</html>
